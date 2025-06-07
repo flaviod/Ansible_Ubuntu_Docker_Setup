@@ -43,7 +43,7 @@
       apt:
         update_cache: yes
 
-    - name: Install Docker and Docker Compose plugin
+    - name: Install Docker and Docker Compose
       apt:
         name:
           - docker-ce
@@ -51,13 +51,8 @@
           - containerd.io
           - docker-buildx-plugin
           - docker-compose-plugin
+          - docker-compose
         state: latest
-
-    - name: Install Docker Compose as a standalone binary
-      get_url:
-        url: "https://github.com/docker/compose/releases/download/v{{ docker_compose_version }}/docker-compose-$(uname -s)-$(uname -m)"
-        dest: /usr/local/bin/docker-compose
-        mode: '0755'
 
     - name: Enable and start Docker
       systemd:
