@@ -1,0 +1,115 @@
+---
+- name: Configure and secure Ubuntu server with Docker
+  hosts: all
+  become: true
+  vars:
+    ufw_allowed_ports: [22, 80, 443]
+    docker_apt_key_url: https://download.docker.com/linux/ubuntu/gpg
+    docker_repo: deb [arch=amd64] https://download.docker.com/linux/ubuntu focal stable
+    docker_compose_version: "2.24.5"
+
+  tasks:
+
+    - name: Update and upgrade apt packages
+      apt:
+        update_cache: yes
+        upgrade: dist
+
+    - name: Install essential packages
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
+          - software-properties-common
+          - fail2ban
+          - ufw
+        state: present
+
+    - name: Add Docker GPG key
+      apt_key:
+        url: "{{ docker_apt_key_url }}"
+        state: present
+
+    - name: Add Docker APT repository
+      apt_repository:
+        repo: "{{ docker_repo }}"
+        state: present
+        filename: docker
+
+    - name: Update apt cache after adding Docker repo
+      apt:
+        update_cache: yes
+
+    - name: Install Docker and Docker Compose plugin
+      apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-buildx-plugin
+          - docker-compose-plugin
+        state: latest
+
+    - name: Install Docker Compose as a standalone binary
+      get_url:
+        url: "https://github.com/docker/compose/releases/download/v{{ docker_compose_version }}/docker-compose-$(uname -s)-$(uname -m)"
+        dest: /usr/local/bin/docker-compose
+        mode: '0755'
+
+    - name: Enable and start Docker
+      systemd:
+        name: docker
+        enabled: true
+        state: started
+
+    - name: Add user to docker group
+      user:
+        name: "{{ ansible_user | default('ubuntu') }}"
+        groups: docker
+        append: yes
+
+    - name: Set up UFW default policies
+      ufw:
+        state: enabled
+        policy: deny
+
+    - name: Allow SSH, HTTP, and HTTPS through UFW
+      ufw:
+        rule: allow
+        port: "{{ item }}"
+      with_items: "{{ ufw_allowed_ports }}"
+
+    - name: Enable UFW
+      ufw:
+        state: enabled
+
+    - name: Configure Fail2Ban with default settings
+      service:
+        name: fail2ban
+        enabled: true
+        state: started
+
+    - name: Ensure unattended-upgrades is installed for automatic security updates
+      apt:
+        name: unattended-upgrades
+        state: present
+
+    - name: Enable automatic security updates
+      lineinfile:
+        path: /etc/apt/apt.conf.d/20auto-upgrades
+        line: "{{ item }}"
+        create: yes
+      with_items:
+        - 'APT::Periodic::Update-Package-Lists "1";'
+        - 'APT::Periodic::Unattended-Upgrade "1";'
+
+    - name: Reboot if needed
+      reboot:
+        msg: "Reboot initiated by Ansible for security and kernel updates"
+        connect_timeout: 5
+        reboot_timeout: 600
+      when: ansible_facts['packages']['linux-image-generic']['versions'][0] is version(ansible_kernel, '>')
+
